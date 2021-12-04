@@ -4,58 +4,44 @@ namespace Wobbler.Nodes
 {
     public abstract class Filter : SingleOutputNode
     {
-        [Input]
         public Input Input { get; set; }
     }
 
     public class LowPass : Filter
     {
-        [Input]
         public Input CutoffFrequency { get; set; }
 
-        public override void Update(in UpdateContext ctx)
+        [UpdateMethod]
+        public static void Update(float input, float cutoffFrequency, float deltaTime, ref float output)
         {
-            var cutoffFrequency = ctx.Get(CutoffFrequency);
-            var prev = ctx.Get(Output);
-            var next = ctx.Get(Input);
+            if (cutoffFrequency <= 0f)
+            {
+                output = 0f;
+                return;
+            }
 
-            var dt = (float)ctx.DeltaTime.Seconds;
             var rc = 1f / (MathF.PI * 2f * cutoffFrequency);
-            var alpha = dt / (rc + dt);
+            var alpha = deltaTime / (rc + deltaTime);
 
-            ctx.Set(Output, prev + alpha * (next - prev));
+            output += alpha * (input - output);
         }
     }
 
     public class Adsr : Filter
     {
-        [Input]
         public Input Attack { get; set; }
-
-        [Input]
         public Input Decay { get; set; }
-
-        [Input]
-        public Input Sustain { get; set; }
-
-        [Input]
+        public Input Sustain { get; set; } = 1f;
         public Input Release { get; set; }
 
-        [Output] public Output State => GetOutput(1);
-
-        public override void Update(in UpdateContext ctx)
+        private int State { get; set; } = 0;
+        
+        [UpdateMethod]
+        public static void Update(float input,
+            float attack, float decay, float sustain, float release,
+            ref int state, float deltaTime, ref float output)
         {
-            var input = ctx.Get(Input);
-
-            var attack = MathF.Max(ctx.Get(Attack), 0f);
-            var decay = MathF.Max(ctx.Get(Decay), 0f);
-            var sustain = MathF.Max(MathF.Min(ctx.Get(Sustain), 1f), 0f);
-            var release = MathF.Max(ctx.Get(Release), 0f);
-
-            var output = ctx.Get(Output);
-            var state = (int) ctx.Get(State);
-
-            var dt = (float)ctx.DeltaTime.Seconds;
+            sustain = MathF.Min(MathF.Max(sustain, 0f), 1f);
 
             if (input > 0.5f)
             {
@@ -64,7 +50,7 @@ namespace Wobbler.Nodes
                     case 0:
                     {
                         // Attack
-                        output += dt / attack;
+                        output += deltaTime / MathF.Max(attack, 0f);
 
                         if (output >= 1f)
                         {
@@ -77,7 +63,7 @@ namespace Wobbler.Nodes
                     case 1:
                     {
                         // Decay
-                        output -= dt * (1f - sustain) / decay;
+                        output -= deltaTime * (1f - sustain) / MathF.Max(decay, 0f);
 
                         if (output <= sustain)
                         {
@@ -95,17 +81,15 @@ namespace Wobbler.Nodes
             }
             else
             {
+                // Release
                 state = 0;
-                output -= dt * sustain / release;
+                output -= deltaTime * sustain / MathF.Max(release, 0f);
 
                 if (output < 0f)
                 {
                     output = 0f;
                 }
             }
-
-            ctx.Set(Output, output);
-            ctx.Set(State, state);
         }
     }
 }

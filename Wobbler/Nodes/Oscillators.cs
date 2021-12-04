@@ -4,48 +4,46 @@ namespace Wobbler.Nodes
 {
     public abstract class Oscillator : SingleOutputNode
     {
-        [Input]
         public Input Frequency { get; set; } = 1f;
 
-        [Input] public Input Min { get; set; } = -1f;
+        public Input Min { get; set; } = -1f;
 
-        [Input] public Input Max { get; set; } = 1f;
+        public Input Max { get; set; } = 1f;
 
-        [Output] public Output Phase => GetOutput(1);
+        public float Phase { get; set; } = 0f;
 
-        public override void Update(in UpdateContext ctx)
+        protected static void Update(float frequency, ref float phase, float deltaTime)
         {
             const float twoPi = MathF.PI * 2f;
 
-            var phase = ctx.Get(Phase) + (float)ctx.DeltaTime.Seconds * ctx.Get(Frequency) * twoPi;
-            var min = ctx.Get(Min);
-            var max = ctx.Get(Max);
+            phase += deltaTime * frequency * twoPi;
 
             if (phase >= twoPi)
             {
                 phase -= twoPi;
             }
-
-            ctx.Set(Phase, phase);
-            ctx.Set(Output, (min + max + GetAmplitude(phase) * (max - min)) * 0.5f);
         }
-
-        protected abstract float GetAmplitude(float phase);
     }
 
     public class Sine : Oscillator
     {
-        protected override float GetAmplitude(float phase)
+        [UpdateMethod]
+        public static void Update(float frequency, float min, float max,
+            ref float phase, float deltaTime, out float output)
         {
-            return MathF.Sin(phase);
+            Update(frequency, ref phase, deltaTime);
+            output = min + (max - min) * (MathF.Sin(phase) * 0.5f + 0.5f);
         }
     }
 
     public class Square : Oscillator
     {
-        protected override float GetAmplitude(float phase)
+        [UpdateMethod]
+        public static void Update(float frequency, float min, float max,
+            ref float phase, float deltaTime, out float output)
         {
-            return phase <= MathF.PI ? 1f : -1f;
+            Update(frequency, ref phase, deltaTime);
+            output = min + (max - min) * (phase <= MathF.PI ? 1f : 0f);
         }
     }
 }

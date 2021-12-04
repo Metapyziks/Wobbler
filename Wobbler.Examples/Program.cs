@@ -1,5 +1,4 @@
 ﻿using System.Threading.Tasks;
-using System.Windows.Input;
 using NAudio.Wave;
 using Wobbler.Nodes;
 
@@ -50,9 +49,13 @@ namespace Wobbler.Examples
                 Max = 1f
             }.Output;
 
+            var sim = new Simulation(44100,
+                envelope * signal * pan,
+                envelope * signal * (1f - pan));
+
             using var output = new WaveOut();
 
-            output.Init(new NodeSampleProvider(44100, envelope * signal * pan, envelope * signal * (1f - pan)));
+            output.Init(sim);
             output.Play();
 
             await Task.Delay(TimeSpan.FromSeconds(60d));

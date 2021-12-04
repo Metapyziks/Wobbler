@@ -8,17 +8,12 @@ namespace Wobbler.Nodes
 {
     public class KeyInput : SingleOutputNode
     {
-        private static bool _sAttachedEvents;
-
-        private static readonly HashSet<Key> _sPressedKeys = new HashSet<Key>();
-
         public Key Key { get; set; }
 
-        public override void Update(in UpdateContext ctx)
+        [UpdateMethod]
+        public static void Update(Key key, out float output)
         {
-            // TODO
-
-            ctx.Set(Output, _sPressedKeys.Contains(Key) ? 1f : 0f);
+            output = 0f;
         }
     }
 }

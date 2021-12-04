@@ -4,42 +4,43 @@
     {
         public float Value { get; set; }
 
-        public override void Update(in UpdateContext ctx)
+        [UpdateMethod]
+        public static void Update(float value, out float output)
         {
-            ctx.Set(Output, Value);
+            output = value;
         }
     }
 
     public abstract class BinaryNode : SingleOutputNode
     {
-        [Input]
         public Input Left { get; set; }
-
-        [Input]
         public Input Right { get; set; }
     }
 
     public class Add : BinaryNode
     {
-        public override void Update(in UpdateContext ctx)
+        [UpdateMethod]
+        public static void Update(float left, float right, out float output)
         {
-            ctx.Set(Output, ctx.Get(Left) + ctx.Get(Right));
+            output = left + right;
         }
     }
 
     public class Subtract : BinaryNode
     {
-        public override void Update(in UpdateContext ctx)
+        [UpdateMethod]
+        public static void Update(float left, float right, out float output)
         {
-            ctx.Set(Output, ctx.Get(Left) - ctx.Get(Right));
+            output = left - right;
         }
     }
 
     public class Multiply : BinaryNode
     {
-        public override void Update(in UpdateContext ctx)
+        [UpdateMethod]
+        public static void Update(float left, float right, out float output)
         {
-            ctx.Set(Output, ctx.Get(Left) * ctx.Get(Right));
+            output = left * right;
         }
     }
 }
