@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using System.Windows.Input;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 using Wobbler.Nodes;
@@ -25,113 +26,6 @@ namespace Wobbler
 
     public abstract class Node
     {
-        public static Output Sin(Output frequency)
-        {
-            return new Sine
-            {
-                Frequency = frequency
-            };
-        }
-
-        public static Output Sin(Output frequency, Output min, Output max)
-        {
-            return (max + min + new Sine
-            {
-                Frequency = frequency
-            }.Output * (max - min)) * 0.5f;
-        }
-
-        public static Output Square(Output frequency)
-        {
-            return new Square
-            {
-                Frequency = frequency
-            };
-        }
-
-        public static Output LowPass(Output signal, Output cutoffFrequency)
-        {
-            return new LowPass
-            {
-                Input = signal,
-                CutoffFrequency = cutoffFrequency
-            };
-        }
-
-        public static async Task PlayAsync(Output left, Output right, Time startTime, TimeSpan duration, int sampleRate = 44100)
-        {
-            if (!left.IsValid)
-            {
-                throw new ArgumentException("Invalid socket.", nameof(left));
-            }
-
-            if (!right.IsValid)
-            {
-                throw new ArgumentException("Invalid socket.", nameof(right));
-            }
-
-            var (indices, outputCount) = NodeIndices.CreateFromNodes(left.Node, right.Node);
-            var totalSamples = (long) Math.Round(sampleRate * duration.Seconds);
-
-            var a = new float[outputCount];
-            var b = new float[outputCount];
-
-            var leftIndices = indices.First(x => x.Node == left.Node);
-            var rightIndices = indices.First(x => x.Node == right.Node);
-
-            var leftIndex = leftIndices.GetOutputIndex(left);
-            var rightIndex = rightIndices.GetOutputIndex(right);
-
-            var time = startTime;
-            var samplePeriod = TimeSpan.FromSamples(sampleRate, 1);
-
-            var timer = new Stopwatch();
-            timer.Start();
-
-            const int chunkSampleCount = 8192;
-            const int channelCount = 2;
-
-            var chunkSamples = new float[chunkSampleCount * channelCount];
-            var sampleProvider = new BufferedWaveProvider(WaveFormat.CreateIeeeFloatWaveFormat(sampleRate, channelCount));
-
-            var byteSamples = new byte[chunkSampleCount * channelCount * sizeof(float)];
-
-            using var output = new WaveOut();
-
-            output.Init(sampleProvider);
-            output.Play();
-
-            var playing = false;
-
-            for (var chunkStartIndex = 0L; chunkStartIndex < totalSamples; chunkStartIndex += chunkSampleCount)
-            {
-                var sampleCount = Math.Min((int) (totalSamples - chunkStartIndex), chunkSampleCount);
-
-                if (sampleCount <= 0) break;
-
-                for (var i = 0; i < sampleCount; ++i)
-                {
-                    foreach (var nodeIndices in indices)
-                    {
-                        var ctx = new UpdateContext(nodeIndices, samplePeriod, a, b);
-                        nodeIndices.Node.Update(in ctx);
-                    }
-
-                    chunkSamples[(i << 1) + 0] = b[leftIndex];
-                    chunkSamples[(i << 1) + 1] = b[rightIndex];
-
-                    time += samplePeriod;
-
-                    (a, b) = (b, a);
-                }
-                
-                Buffer.BlockCopy(chunkSamples, 0, byteSamples, 0, sampleCount * channelCount * sizeof(float));
-                sampleProvider.AddSamples(byteSamples, 0, byteSamples.Length);
-            }
-
-            await Task.Delay(duration);
-        }
-        
         private static readonly Dictionary<Type, PropertyInfo[]> _sInputCache = new();
         private static readonly Dictionary<Type, PropertyInfo[]> _sOutputCache = new();
 
@@ -180,7 +74,9 @@ namespace Wobbler
 
                 if (input.Node == this && input.Index == i) continue;
 
-                property.SetValue(this, new Input(this, i, input.Value));
+                property.SetValue(this, input.Signal.IsValid
+                    ? new Input(this, i, input.Signal)
+                    : new Input(this, i, input.Constant));
             }
         }
 
@@ -197,7 +93,7 @@ namespace Wobbler
             for (var i = 0; i < InputCount; ++i)
             {
                 var input = GetInput(i);
-                outputCount += input.Value.Node?.FindAllNodes(outSet) ?? 0;
+                outputCount += input.Signal.Node?.FindAllNodes(outSet) ?? 0;
             }
 
             return outputCount;
@@ -211,14 +107,16 @@ namespace Wobbler
 
     public readonly struct NodeIndices
     {
-        public static (NodeIndices[] array, int outputCount) CreateFromNodes(params Node[] rootNodes)
+        public static (NodeIndices[] array, int outputCount) CreateFromOutputs(params Output[] outputs)
         {
             var allNodes = new HashSet<Node>();
             var outputCount = 0;
 
-            foreach (var node in rootNodes)
+            foreach (var output in outputs)
             {
-                outputCount += node.FindAllNodes(allNodes);
+                if (output.Node == null) continue;
+
+                outputCount += output.Node.FindAllNodes(allNodes);
             }
 
             var array = allNodes.Select(x => new NodeIndices(x))
@@ -284,8 +182,8 @@ namespace Wobbler
             for (var i = 0; i < _inputIndices.Length; ++i)
             {
                 var input = Node.GetInput(i);
-                _inputIndices[i] = input.Value.IsValid
-                    ? ctxArray[nodeDict[input.Value.Node]]._outputIndices[input.Value.Index]
+                _inputIndices[i] = input.Signal.IsValid
+                    ? ctxArray[nodeDict[input.Signal.Node]]._outputIndices[input.Signal.Index]
                     : -1;
             }
         }
@@ -312,7 +210,12 @@ namespace Wobbler
 
         public float Get(Input input)
         {
-            return input.Value.IsValid ? _prev[_nodeIndices.GetInputIndex(input)] : 0f;
+            return input.Signal.IsValid ? _prev[_nodeIndices.GetInputIndex(input)] : input.Constant;
+        }
+
+        public float Get(Output output)
+        {
+            return _prev[_nodeIndices.GetOutputIndex(output)];
         }
 
         public void Set(Output output, float value)
@@ -323,6 +226,11 @@ namespace Wobbler
 
     public readonly struct Input
     {
+        public static implicit operator Input(SingleOutputNode node)
+        {
+            return new Input(null, 0, node.Output);
+        }
+
         public static implicit operator Input(Output output)
         {
             return new Input(null, 0, output);
@@ -333,35 +241,72 @@ namespace Wobbler
             return new Input(null, 0, value);
         }
 
+        public static implicit operator Input(Key key)
+        {
+            return new Input(null, 0, key);
+        }
+
         public bool IsValid => Node != null;
 
         internal Node Node { get; }
 
         internal int Index { get; }
 
-        internal Output Value { get; }
+        internal Output Signal { get; }
 
-        internal Input(Node node, int index, Output value)
+        internal float Constant { get; }
+
+        internal Input(Node node, int index, Output signal)
         {
             Node = node;
             Index = index;
-            Value = value;
+            Signal = signal;
+            Constant = 0f;
+        }
+
+        internal Input(Node node, int index, float constant)
+        {
+            Node = node;
+            Index = index;
+            Signal = default;
+            Constant = constant;
         }
     }
 
     public readonly struct Output
     {
-        public static implicit operator Output(float value)
-        {
-            return new Constant(value).Output;
-        }
-
         public static implicit operator Output(SingleOutputNode node)
         {
             return node.Output;
         }
 
+        public static implicit operator Output(Key key)
+        {
+            return new KeyInput
+            {
+                Key = key
+            }.Output;
+        }
+
         public static Output operator +(Output a, Output b)
+        {
+            return new Add
+            {
+                Left = a,
+                Right = b
+            };
+        }
+
+        public static Output operator +(Output a, float b)
+        {
+            return new Add
+            {
+                Left = a,
+                Right = b
+            };
+        }
+
+        public static Output operator +(float a, Output b)
         {
             return new Add
             {
@@ -379,7 +324,43 @@ namespace Wobbler
             };
         }
 
+        public static Output operator -(Output a, float b)
+        {
+            return new Subtract
+            {
+                Left = a,
+                Right = b
+            };
+        }
+
+        public static Output operator -(float a, Output b)
+        {
+            return new Subtract
+            {
+                Left = a,
+                Right = b
+            };
+        }
+
         public static Output operator *(Output a, Output b)
+        {
+            return new Multiply
+            {
+                Left = a,
+                Right = b
+            };
+        }
+
+        public static Output operator *(Output a, float b)
+        {
+            return new Multiply
+            {
+                Left = a,
+                Right = b
+            };
+        }
+
+        public static Output operator *(float a, Output b)
         {
             return new Multiply
             {

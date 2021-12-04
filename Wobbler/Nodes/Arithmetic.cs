@@ -4,11 +4,6 @@
     {
         public float Value { get; set; }
 
-        public Constant(float value)
-        {
-            Value = value;
-        }
-
         public override void Update(in UpdateContext ctx)
         {
             ctx.Set(Output, Value);

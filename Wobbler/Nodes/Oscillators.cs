@@ -7,28 +7,27 @@ namespace Wobbler.Nodes
         [Input]
         public Input Frequency { get; set; } = 1f;
 
-        [Input] public Input LastPhase { get; set; }
+        [Input] public Input Min { get; set; } = -1f;
 
-        [Output] public Output NextPhase => GetOutput(1);
-        
-        protected Oscillator()
-        {
-            LastPhase = NextPhase;
-        }
+        [Input] public Input Max { get; set; } = 1f;
+
+        [Output] public Output Phase => GetOutput(1);
 
         public override void Update(in UpdateContext ctx)
         {
             const float twoPi = MathF.PI * 2f;
 
-            var phase = ctx.Get(LastPhase) + (float)ctx.DeltaTime.Seconds * ctx.Get(Frequency) * twoPi;
+            var phase = ctx.Get(Phase) + (float)ctx.DeltaTime.Seconds * ctx.Get(Frequency) * twoPi;
+            var min = ctx.Get(Min);
+            var max = ctx.Get(Max);
 
             if (phase >= twoPi)
             {
                 phase -= twoPi;
             }
 
-            ctx.Set(NextPhase, phase);
-            ctx.Set(Output, GetAmplitude(phase));
+            ctx.Set(Phase, phase);
+            ctx.Set(Output, (min + max + GetAmplitude(phase) * (max - min)) * 0.5f);
         }
 
         protected abstract float GetAmplitude(float phase);
