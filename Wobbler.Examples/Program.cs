@@ -7,22 +7,18 @@ using Wobbler.Nodes;
 
 namespace Wobbler.Examples
 {
-    class Program
+    class Beeper : SingleOutputNode
     {
-        static async Task Main(string[] args)
-        {
-            var freq = new Square
-            {
-                Frequency = 0.25f,
-                Min = 440f,
-                Max = 523.25f
-            }.Output;
+        public Input Input { get; set; }
+        public Input Frequency { get; set; }
 
-            var signal = new LowPass
+        public Beeper()
+        {
+            Output = new LowPass
             {
                 Input = new Sine
                 {
-                    Frequency = freq
+                    Frequency = Frequency
                 },
                 CutoffFrequency = new Sine
                 {
@@ -32,16 +28,33 @@ namespace Wobbler.Examples
                 }
             }.Output * new Adsr
             {
-                Input = new Square
-                {
-                    Frequency = 3f
-                },
+                Input = Input,
 
                 Attack = 0.025f,
                 Decay = 0.05f,
                 Sustain = 0.5f,
                 Release = 0.25f
             }.Output * 0.1f;
+        }
+    }
+
+    class Program
+    {
+        static async Task Main(string[] args)
+        {
+            var beeper = new Beeper
+            {
+                Input = new Square
+                {
+                    Frequency = 3f
+                },
+                Frequency = new Square
+                {
+                    Frequency = 0.25f,
+                    Min = 440f,
+                    Max = 523.25f
+                }
+            }.Output;
 
             var pan = new Sine
             {
@@ -50,9 +63,9 @@ namespace Wobbler.Examples
                 Max = 1f
             }.Output;
 
-            var sim = new Simulation(44100,
-                signal * pan,
-                signal * (1f - pan));
+            var sim = new InstrumentWaveProvider(44100,
+                beeper * pan,
+                beeper * (1f - pan));
 
             await using var writer = new WaveFileWriter("test.wav", sim.WaveFormat);
 

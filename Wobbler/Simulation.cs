@@ -1,29 +1,27 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
 using NAudio.Wave;
 
 namespace Wobbler
 {
-    public partial class Simulation : IWaveProvider
+    public class InstrumentWaveProvider : IWaveProvider
     {
         public WaveFormat WaveFormat { get; }
-        public Output[] Outputs { get; }
+        public IInstrument Instrument { get; }
 
-        private readonly int[] _outputIndices;
-        private readonly float[] _outputBuffer;
-
-        private readonly float[] _values;
+        public float TimeScale { get; set; } = 1f;
 
         private readonly float _deltaTime;
-        private readonly NextDelegate _nextMethod;
 
-        private readonly (int ValueIndex, Node Node, PropertyInfo Property)[] _stateProperties;
+        public InstrumentWaveProvider(int sampleRate, IInstrument instrument)
+        {
+            WaveFormat = WaveFormat.CreateIeeeFloatWaveFormat(sampleRate, instrument.OutputCount);
+            Instrument = instrument;
 
-        public Simulation(int sampleRate, params Output[] outputs)
+            _deltaTime = (float)TimeSpan.FromSamples(sampleRate, 1d).Seconds;
+        }
+
+        public InstrumentWaveProvider(int sampleRate, params Output[] outputs)
         {
             if (outputs.Any(x => !x.IsValid))
             {
@@ -31,93 +29,78 @@ namespace Wobbler
             }
 
             WaveFormat = WaveFormat.CreateIeeeFloatWaveFormat(sampleRate, outputs.Length);
-            Outputs = outputs;
 
             _deltaTime = (float)TimeSpan.FromSamples(sampleRate, 1d).Seconds;
 
-            var nodes = FindAllNodes(outputs.Select(x => x.Node));
-            var indices = AssignValueIndices(nodes);
+            var builder = new InstrumentBuilder(0);
 
-            _nextMethod = GenerateNextMethod(nodes, indices);
+            foreach (var output in outputs)
+            {
+                builder.AddOutput(output);
+            }
 
-            _outputIndices = outputs
-                .Select(x => indices[(x.Node, x.Index)])
-                .ToArray();
+            var ctor = builder.GenerateConstructor();
 
-            _values = new float[indices.Count];
-            _outputBuffer = new float[outputs.Length];
-
-            _stateProperties = nodes
-                .SelectMany(x => x.Type.UpdateMethodParameters
-                    .Where(y => y.Type == UpdateParameterType.State)
-                    .Select(y => (indices[(x, x.Type.OutputCount + y.Index)], x, y.Property)))
-                .ToArray();
-
-            Reset();
+            Instrument = ctor();
         }
 
         public void Reset()
         {
-            Array.Clear(_values, 0, _values.Length);
-
-            foreach (var item in _stateProperties)
-            {
-                _values[item.ValueIndex] = (float) Convert.ChangeType(item.Property.GetValue(item.Node), typeof(float))!;
-            }
-        }
-
-        private static Node[] FindAllNodes(IEnumerable<Node> roots)
-        {
-            var queue = new Queue<Node>(roots);
-            var set = new HashSet<Node>();
-
-            while (queue.TryDequeue(out var next))
-            {
-                if (!set.Add(next)) continue;
-
-                for (var i = 0; i < next.Type.InputCount; ++i)
-                {
-                    var input = next.GetInput(i);
-
-                    if (input.ConnectedOutput.IsValid)
-                    {
-                        queue.Enqueue(input.ConnectedOutput.Node);
-                    }
-                }
-            }
-
-            return set.Reverse().ToArray();
+            Instrument.Reset();
         }
 
         public void Next()
         {
-            var specialParams = new SpecialParameters(_deltaTime);
+            var globals = new GlobalParameters(_deltaTime * TimeScale);
 
-            _nextMethod(_values, specialParams);
+            Instrument.Next(globals);
         }
 
         public float GetOutput(int index)
         {
-            return _values[_outputIndices[index]];
+            return Instrument.GetOutput(index);
+        }
+
+        [ThreadStatic]
+        private static float[] _sOutputBuffer;
+
+        private static float[] GetOutputBuffer(int minSize)
+        {
+            if (_sOutputBuffer != null && _sOutputBuffer.Length >= minSize)
+            {
+                return _sOutputBuffer;
+            }
+
+            var size = 64;
+
+            while (size < minSize) size <<= 1;
+
+            _sOutputBuffer = new float[size];
+
+            return _sOutputBuffer;
         }
 
         public int Read(byte[] buffer, int offset, int count)
         {
-            var stride = Outputs.Length * sizeof(float);
+            var channels = WaveFormat.Channels;
+            var stride = channels * sizeof(float);
+            var iters = count / stride;
 
-            count = count / stride * stride;
+            count = iters * stride;
 
-            for (var i = 0; i < count; i += stride)
+            var outputBuffer = GetOutputBuffer(channels * iters);
+
+            for (int i = 0, outIndex = 0; i < iters; ++i, outIndex += channels)
             {
                 Next();
 
-                for (var c = 0; c < Outputs.Length; ++c)
+                for (var c = 0; c < channels; ++c)
                 {
-                    _outputBuffer[c] = GetOutput(c);
+                    outputBuffer[outIndex + c] = Instrument.GetOutput(c);
                 }
-
-                Buffer.BlockCopy(_outputBuffer, 0, buffer, offset + i, stride);
             }
+
+            Buffer.BlockCopy(outputBuffer, 0, buffer, offset, count);
 
             return count;
         }

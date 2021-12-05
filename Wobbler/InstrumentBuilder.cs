@@ -1,31 +1,108 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Reflection.Emit;
 using System.Text;
 using System.Threading.Tasks;
 
 namespace Wobbler
 {
-    partial class Simulation
+    public interface IInstrument
     {
-        private delegate void NextDelegate(float[] values, SpecialParameters specialParams);
+        int InputCount { get; }
+        int OutputCount { get; }
 
-        private Dictionary<(Node Node, int Index), int> AssignValueIndices(Node[] nodes)
+        void Next(GlobalParameters globals);
+        void Reset();
+
+        void SetInput(int index, float value);
+        float GetOutput(int index);
+    }
+
+    public class Instrument : Node
+    {
+
+    }
+
+    public delegate IInstrument InstrumentCtor();
+
+    public class InstrumentBuilder
+    {
+        private enum ValueKind
         {
-            var valueIndices = new Dictionary<(Node Node, int Index), int>();
+            Output,
+            State
+        }
 
-            void AddValueIndex(Node node, int index)
+        private readonly struct ValueInfo
+        {
+            public bool IsLocal { get; }
+            public bool IsField => !IsLocal;
+
+            public string Name { get; }
+            public Type Type { get; }
+
+            public ValueInfo(bool isLocal, string name, Type type)
             {
-                if (valueIndices.ContainsKey((node, index))) return;
+                IsLocal = isLocal;
+                Name = name;
+                Type = type;
+            }
+        }
 
-                valueIndices.Add((node, index), valueIndices.Count);
+        public class Input : SingleOutputNode { }
+
+        public int InputCount => Inputs.Count;
+
+        private readonly Input[] _inputs;
+        private readonly List<Output> _outputs = new List<Output>();
+
+        public int OutputCount => _outputs.Count;
+
+        public IReadOnlyList<Input> Inputs => _inputs;
+        public IReadOnlyList<Output> Outputs => _outputs;
+
+        public InstrumentBuilder(int inputCount)
+        {
+            _inputs = new Input[inputCount];
+        }
+
+        public void AddOutput(Output output)
+        {
+            _outputs.Add(output);
+        }
+
+        public InstrumentCtor GenerateConstructor()
+        {
+            var values = new Dictionary<(Node Node, ValueKind Kind, int Index), ValueInfo>();
+            var nodes = Node.FindAllNodes(Outputs.Select(x => x.Node));
+
+            var processed = new HashSet<Node>();
+
+            void RegisterOutput(Output value, bool canBeLocal)
+            {
+                var key = (value.Node, ValueKind.Output, value.Index);
+
+                if (values.TryGetValue(key, out var existing))
+                {
+                    if (canBeLocal || existing.IsField) return;
+
+                    values[key] = new ValueInfo(false, existing.Name, typeof(float));
+                    return;
+                }
+
+                values.Add(key, new ValueInfo(canBeLocal, $"Output{values.Count}", typeof(float)));
             }
 
-            void AddOutputIndex(Output output) => AddValueIndex(output.Node, output.Index);
-            void AddStateIndex(Node node, int index) => AddValueIndex(node, node.Type.OutputCount + index);
+            void RegisterState(Node node, int index, Type type)
+            {
+                var key = (node, ValueKind.State, index);
+
+                if (!values.ContainsKey(key))
+                {
+                    values.Add(key, new ValueInfo(false, $"State{values.Count}", type));
+                }
+            }
 
             foreach (var node in nodes)
             {
@@ -38,34 +115,48 @@ namespace Wobbler
 
                             if (input.ConnectedOutput.IsValid)
                             {
-                                AddOutputIndex(input.ConnectedOutput);
+                                RegisterOutput(input.ConnectedOutput, processed.Contains(input.ConnectedOutput.Node));
                             }
+
                             break;
 
                         case UpdateParameterType.Output:
-                            var output = node.GetOutput(parameter.Index);
-                            AddOutputIndex(output);
+                            // If parameter is ref rather than out, we need
+                            // to store the last value as a field
+                            if (!parameter.Parameter.IsOut)
+                            {
+                                var output = node.GetOutput(parameter.Index);
+                                RegisterOutput(output, false);
+                            }
+
                             break;
 
                         case UpdateParameterType.State:
-                            AddStateIndex(node, parameter.Index);
+                            RegisterState(node, parameter.Index, parameter.Property.PropertyType);
                             break;
                     }
                 }
+
+                processed.Add(node);
             }
 
-            return valueIndices;
+            foreach (var output in Outputs)
+            {
+                RegisterOutput(output, false);
+            }
+
+            throw new NotImplementedException();
         }
 
-        private NextDelegate GenerateNextMethod(Node[] nodes, Dictionary<(Node Node, int Index), int> indices)
+        private DynamicMethod GenerateNextMethod(Node[] nodes, Dictionary<(Node Node, int Index), int> indices)
         {
             var paramTypes = new[]
             {
                 typeof(float[]),
-                typeof(SpecialParameters)
+                typeof(GlobalParameters)
             };
 
-            var method = new DynamicMethod("Next", typeof(void), paramTypes, typeof(Simulation).Module);
+            var method = new DynamicMethod("Next", typeof(void), paramTypes, typeof(Node).Module);
 
             var ilGen = method.GetILGenerator();
 
@@ -167,8 +258,8 @@ namespace Wobbler
                             }
                             break;
 
-                        case UpdateParameterType.Special:
-                            ilGen.Emit(OpCodes.Ldarga_S, (byte) 1);
+                        case UpdateParameterType.Global:
+                            ilGen.Emit(OpCodes.Ldarga_S, (byte)1);
                             ilGen.Emit(OpCodes.Call, parameter.Property.GetMethod);
                             break;
                     }
@@ -194,7 +285,7 @@ namespace Wobbler
 
             ilGen.Emit(OpCodes.Ret);
 
-            return method.CreateDelegate<NextDelegate>();
+            return method;
         }
     }
 }

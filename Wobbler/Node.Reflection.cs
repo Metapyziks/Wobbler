@@ -13,16 +13,16 @@ namespace Wobbler
         Input,
         Output,
         State,
-        Special
+        Global
     }
 
-    public readonly struct SpecialParameters
+    public readonly struct GlobalParameters
     {
-        private static Dictionary<string, PropertyInfo> Properties { get; } = typeof(SpecialParameters)
+        private static Dictionary<string, PropertyInfo> Properties { get; } = typeof(GlobalParameters)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .ToDictionary(x => x.Name, x => x, StringComparer.OrdinalIgnoreCase);
 
-        public static bool TryGetSpecialParameter(ParameterInfo paramInfo, out PropertyInfo propertyInfo)
+        public static bool TryGetParameter(ParameterInfo paramInfo, out PropertyInfo propertyInfo)
         {
             propertyInfo = default;
 
@@ -33,7 +33,7 @@ namespace Wobbler
 
         public float DeltaTime { get; }
 
-        public SpecialParameters(float deltaTime)
+        public GlobalParameters(float deltaTime)
         {
             DeltaTime = deltaTime;
         }
@@ -104,11 +104,11 @@ namespace Wobbler
 
             UpdateMethod = type
                 .GetMethods(BindingFlags.Public | BindingFlags.Static)
-                .FirstOrDefault(x => x.GetCustomAttribute<UpdateMethodAttribute>() != null);
+                .FirstOrDefault(x => x.GetCustomAttribute<NextMethodAttribute>() != null);
 
             if (UpdateMethod == null)
             {
-                throw new Exception($"Type must have a public static method marked with {nameof(UpdateMethodAttribute)}.");
+                throw new Exception($"Type must have a public static method marked with {nameof(NextMethodAttribute)}.");
             }
 
             _properties = Type
@@ -194,9 +194,9 @@ namespace Wobbler
                     $"Parameter: {paramInfo.Name}");
             }
 
-            if (SpecialParameters.TryGetSpecialParameter(paramInfo, out var propInfo))
+            if (GlobalParameters.TryGetParameter(paramInfo, out var propInfo))
             {
-                return new UpdateMethodParameter(paramInfo, propInfo, UpdateParameterType.Special, 0);
+                return new UpdateMethodParameter(paramInfo, propInfo, UpdateParameterType.Global, 0);
             }
 
             if (!TryGetProperty(paramInfo, out propInfo, out var type))

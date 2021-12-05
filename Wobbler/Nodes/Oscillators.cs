@@ -27,7 +27,7 @@ namespace Wobbler.Nodes
 
     public class Sine : Oscillator
     {
-        [UpdateMethod]
+        [NextMethod]
         public static void Update(float frequency, float min, float max,
             ref float phase, float deltaTime, out float output)
         {
@@ -38,7 +38,7 @@ namespace Wobbler.Nodes
 
     public class Square : Oscillator
     {
-        [UpdateMethod]
+        [NextMethod]
         public static void Update(float frequency, float min, float max,
             ref float phase, float deltaTime, out float output)
         {

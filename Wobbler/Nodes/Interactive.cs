@@ -10,7 +10,7 @@ namespace Wobbler.Nodes
     {
         public Key Key { get; set; }
 
-        [UpdateMethod]
+        [NextMethod]
         public static void Update(Key key, out float output)
         {
             output = 0f;

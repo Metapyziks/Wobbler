@@ -1,12 +1,40 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Wobbler
 {
     [AttributeUsage(AttributeTargets.Method)]
-    public sealed class UpdateMethodAttribute : Attribute { }
+    public sealed class NextMethodAttribute : Attribute { }
 
-    public abstract partial class Node
+    [AttributeUsage(AttributeTargets.Method)]
+    public sealed class DefineMethodAttribute : Attribute { }
+
+    public abstract class Node
     {
+        public static Node[] FindAllNodes(IEnumerable<Node> roots)
+        {
+            var queue = new Queue<Node>(roots);
+            var set = new HashSet<Node>();
+
+            while (queue.TryDequeue(out var next))
+            {
+                if (!set.Add(next)) continue;
+
+                for (var i = 0; i < next.Type.InputCount; ++i)
+                {
+                    var input = next.GetInput(i);
+
+                    if (input.ConnectedOutput.IsValid)
+                    {
+                        queue.Enqueue(input.ConnectedOutput.Node);
+                    }
+                }
+            }
+
+            return set.Reverse().ToArray();
+        }
+
         public NodeType Type { get; }
 
         public Input GetInput(int index)
