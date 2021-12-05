@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using NAudio.Wave;
@@ -15,9 +16,12 @@ namespace Wobbler
         private readonly int[] _outputIndices;
         private readonly float[] _outputBuffer;
 
-        private float[] _values;
+        private readonly float[] _values;
 
         private readonly float _deltaTime;
+        private readonly NextDelegate _nextMethod;
+
+        private readonly (int ValueIndex, Node Node, PropertyInfo Property)[] _stateProperties;
 
         public Simulation(int sampleRate, params Output[] outputs)
         {
@@ -32,80 +36,34 @@ namespace Wobbler
             _deltaTime = (float)TimeSpan.FromSamples(sampleRate, 1d).Seconds;
 
             var nodes = FindAllNodes(outputs.Select(x => x.Node));
-            var valueIndices = new Dictionary<(Node Node, int Index), int>();
+            var indices = AssignValueIndices(nodes);
 
-            int GetValueIndex(Node node, int index)
-            {
-                if (valueIndices.TryGetValue((node, index), out var value))
-                {
-                    return value;
-                }
+            _nextMethod = GenerateNextMethod(nodes, indices);
 
-                value = valueIndices.Count;
-                valueIndices.Add((node, index), value);
+            _outputIndices = outputs
+                .Select(x => indices[(x.Node, x.Index)])
+                .ToArray();
 
-                return value;
-            }
-
-            int GetOutputIndex(Output output) => GetValueIndex(output.Node, output.Index);
-            int GetStateIndex(Node node, int index) => GetValueIndex(node, node.Type.OutputCount + index);
-
-            foreach (var node in nodes)
-            {
-                Console.WriteLine($"{node.Type.UpdateMethod.DeclaringType!.FullName}.{node.Type.UpdateMethod.Name}(");
-
-                foreach (var parameter in node.Type.UpdateMethodParameters)
-                {
-                    switch (parameter.Type)
-                    {
-                        case UpdateParameterType.Input:
-                            var input = node.GetInput(parameter.Index);
-
-                            if (input.ConnectedOutput.IsValid)
-                            {
-                                Console.WriteLine($"  {parameter.Parameter.Name}: in [{GetOutputIndex(input.ConnectedOutput)}],");
-                            }
-                            else
-                            {
-                                Console.WriteLine($"  {parameter.Parameter.Name}: {input.Constant},");
-                            }
-                            break;
-
-                        case UpdateParameterType.Output:
-                            var output = node.GetOutput(parameter.Index);
-
-                            if (parameter.Parameter.IsOut)
-                            {
-                                Console.WriteLine($"  {parameter.Parameter.Name}: out [{GetOutputIndex(output)}],");
-                            }
-                            else
-                            {
-                                Console.WriteLine($"  {parameter.Parameter.Name}: ref [{GetOutputIndex(output)}],");
-                            }
-                            break;
-
-                        case UpdateParameterType.State:
-                            if (parameter.Parameter.ParameterType.IsByRef)
-                            {
-                                Console.WriteLine($"  {parameter.Parameter.Name}: ref [{GetStateIndex(node, parameter.Index)}],");
-                            }
-                            else
-                            {
-                                Console.WriteLine($"  {parameter.Parameter.Name}: in [{GetStateIndex(node, parameter.Index)}],");
-                            }
-                            break;
-
-                        case UpdateParameterType.Special:
-                            Console.WriteLine($"  {parameter.Parameter.Name}: in {parameter.Property.Name},");
-                            break;
-                    }
-                }
-                
-                Console.WriteLine(")");
-            }
-
-            _values = new float[valueIndices.Count];
+            _values = new float[indices.Count];
             _outputBuffer = new float[outputs.Length];
+
+            _stateProperties = nodes
+                .SelectMany(x => x.Type.UpdateMethodParameters
+                    .Where(y => y.Type == UpdateParameterType.State)
+                    .Select(y => (indices[(x, x.Type.OutputCount + y.Index)], x, y.Property)))
+                .ToArray();
+
+            Reset();
+        }
+
+        public void Reset()
+        {
+            Array.Clear(_values, 0, _values.Length);
+
+            foreach (var item in _stateProperties)
+            {
+                _values[item.ValueIndex] = (float) Convert.ChangeType(item.Property.GetValue(item.Node), typeof(float))!;
+            }
         }
 
         private static Node[] FindAllNodes(IEnumerable<Node> roots)
@@ -133,7 +91,9 @@ namespace Wobbler
 
         public void Next()
         {
-            throw new NotImplementedException();
+            var specialParams = new SpecialParameters(_deltaTime);
+
+            _nextMethod(_values, specialParams);
         }
 
         public float GetOutput(int index)

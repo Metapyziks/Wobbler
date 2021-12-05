@@ -12,46 +12,36 @@ namespace Wobbler
     {
         public static implicit operator Input(SingleOutputNode node)
         {
-            return new Input(null, 0, node.Output);
+            return new Input(node.Output);
         }
 
         public static implicit operator Input(Output output)
         {
-            return new Input(null, 0, output);
+            return new Input(output);
         }
 
         public static implicit operator Input(float value)
         {
-            return new Input(null, 0, value);
+            return new Input(value);
         }
 
         public static implicit operator Input(Key key)
         {
-            return new Input(null, 0, key);
+            return new Input(key);
         }
-
-        public bool IsValid => Node != null;
-
-        internal Node Node { get; }
-
-        internal int Index { get; }
-
+        
         internal Output ConnectedOutput { get; }
 
         internal float Constant { get; }
 
-        internal Input(Node node, int index, Output signal)
+        internal Input(Output signal)
         {
-            Node = node;
-            Index = index;
             ConnectedOutput = signal;
             Constant = 0f;
         }
 
-        internal Input(Node node, int index, float constant)
+        internal Input(float constant)
         {
-            Node = node;
-            Index = index;
             ConnectedOutput = default;
             Constant = constant;
         }

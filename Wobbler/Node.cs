@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 
 namespace Wobbler
 {
@@ -17,10 +16,7 @@ namespace Wobbler
 
         public void SetInput(int index, Input value)
         {
-            Type.InputProperties[index].SetValue(this,
-                value.ConnectedOutput.IsValid
-                    ? new Input(this, index, value.ConnectedOutput)
-                    : new Input(this, index, value.Constant));
+            Type.InputProperties[index].SetValue(this, value);
         }
 
         public Output GetOutput(int index) => new(this, index);
@@ -37,19 +33,6 @@ namespace Wobbler
             for (var i = 0; i < Type.OutputCount; ++i)
             {
                 Type.OutputProperties[i].SetValue(this, GetOutput(i));
-            }
-        }
-
-        private void UpdateInputs()
-        {
-            for (var i = 0; i < Type.InputCount; ++i)
-            {
-                var property = Type.InputProperties[i];
-                var input = (Input)property.GetValue(this)!;
-
-                if (input.Node == this && input.Index == i) continue;
-
-                SetInput(i, input);
             }
         }
     }
