@@ -12,7 +12,7 @@ namespace Wobbler.Nodes
 
         public float Phase { get; set; } = 0f;
 
-        protected static void Update(float frequency, ref float phase, float deltaTime)
+        protected static void Next(float frequency, ref float phase, float deltaTime)
         {
             const float twoPi = MathF.PI * 2f;
 
@@ -28,10 +28,10 @@ namespace Wobbler.Nodes
     public class Sine : Oscillator
     {
         [NextMethod]
-        public static void Update(float frequency, float min, float max,
+        public static void Next(float frequency, float min, float max,
             ref float phase, float deltaTime, out float output)
         {
-            Update(frequency, ref phase, deltaTime);
+            Next(frequency, ref phase, deltaTime);
             output = min + (max - min) * (MathF.Sin(phase) * 0.5f + 0.5f);
         }
     }
@@ -39,10 +39,10 @@ namespace Wobbler.Nodes
     public class Square : Oscillator
     {
         [NextMethod]
-        public static void Update(float frequency, float min, float max,
+        public static void Next(float frequency, float min, float max,
             ref float phase, float deltaTime, out float output)
         {
-            Update(frequency, ref phase, deltaTime);
+            Next(frequency, ref phase, deltaTime);
             output = min + (max - min) * (phase <= MathF.PI ? 1f : 0f);
         }
     }

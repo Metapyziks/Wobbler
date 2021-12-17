@@ -12,7 +12,7 @@ namespace Wobbler.Nodes
         public Input CutoffFrequency { get; set; }
 
         [NextMethod]
-        public static void Update(float input, float cutoffFrequency, float deltaTime, ref float output)
+        public static void Next(float input, float cutoffFrequency, float deltaTime, ref float output)
         {
             if (cutoffFrequency <= 0f)
             {
@@ -37,7 +37,7 @@ namespace Wobbler.Nodes
         private int State { get; set; } = 0;
         
         [NextMethod]
-        public static void Update(float input,
+        public static void Next(float input,
             float attack, float decay, float sustain, float release,
             ref int state, float deltaTime, ref float output)
         {

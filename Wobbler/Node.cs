@@ -7,9 +7,6 @@ namespace Wobbler
     [AttributeUsage(AttributeTargets.Method)]
     public sealed class NextMethodAttribute : Attribute { }
 
-    [AttributeUsage(AttributeTargets.Method)]
-    public sealed class DefineMethodAttribute : Attribute { }
-
     public abstract class Node
     {
         public static Node[] FindAllNodes(IEnumerable<Node> roots)

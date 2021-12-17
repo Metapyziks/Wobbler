@@ -5,7 +5,7 @@
         public float Value { get; set; }
 
         [NextMethod]
-        public static void Update(float value, out float output)
+        public static void Next(float value, out float output)
         {
             output = value;
         }
@@ -20,7 +20,7 @@
     public class Add : BinaryNode
     {
         [NextMethod]
-        public static void Update(float left, float right, out float output)
+        public static void Next(float left, float right, out float output)
         {
             output = left + right;
         }
@@ -29,7 +29,7 @@
     public class Subtract : BinaryNode
     {
         [NextMethod]
-        public static void Update(float left, float right, out float output)
+        public static void Next(float left, float right, out float output)
         {
             output = left - right;
         }
@@ -38,7 +38,7 @@
     public class Multiply : BinaryNode
     {
         [NextMethod]
-        public static void Update(float left, float right, out float output)
+        public static void Next(float left, float right, out float output)
         {
             output = left * right;
         }
